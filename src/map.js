@@ -5,6 +5,7 @@ function log(s) {
 function Map(id, layers) {
 
   var parent = document.getElementById(id);
+  var doRegenerateLabels = true;
   if (!parent.style.position) parent.style.position = 'relative';
 
   for (var i = 0; i < layers.length; i++) {
@@ -27,39 +28,42 @@ function Map(id, layers) {
     canvas.height = parseInt(canvas.style.height.match(/\d+/));
 
     layer.canvas = canvas;
-    layer.box = { x: -180, y: -90, width: 360, height: 180 };
+    layer.box = { x: -180, y: -90, w: 360, h: 180 };
     
     layer.load();
   }
   
-  var box = { x: -180, y: -90, width: 360, height: 180 };
+  var box = { x: -180, y: -90, w: 360, h: 180 };
   
   var render = function() {
     for (var i = 0; i < layers.length; i++) {
       layers[i].box = box;
+      if(doRegenerateLabels) layers[i].regenerateLabels();
       layers[i].render();
     }
+    doRegenerateLabels = false;
   }
   
   var panBy = function(x,y) {
-    var degreesPerPixel = box.width / 1024.0;
+    var degreesPerPixel = box.w / 1024.0;
     box.x -= x * degreesPerPixel;
     box.y += y * degreesPerPixel;
     render();
   }
   
   var zoomBy = function(s,x,y) {
-    var degreesPerPixel = box.width / 1024.0;
+    var degreesPerPixel = box.w / 1024.0;
     var boxX = box.x + (x * degreesPerPixel)
     var boxY = box.y + ((512-y) * degreesPerPixel)
     box.x -= boxX;
     box.y -= boxY;
     box.x *= s;
     box.y *= s;
-    box.width *= s;
-    box.height *= s;
+    box.w *= s;
+    box.h *= s;
     box.x += boxX;
     box.y += boxY;
+    doRegenerateLabels = true;
     render();
   }
   

@@ -209,6 +209,8 @@ function ShpPoint(src, size) {
             throw(new ShpError("Not a Point record (too small)"));
         this.x = (size > 0)  ? src.getDouble() : NaN;
         this.y = (size > 0)  ? src.getDouble() : NaN;
+        this.w = (size > 0)  ?  0 : NaN;
+        this.h = (size > 0)  ?  0 : NaN;
     }
 }
 function ShpPointZ(src, size) {
@@ -218,6 +220,8 @@ function ShpPointZ(src, size) {
             throw(new ShpError("Not a Point record (too small)"));
         this.x = (size > 0)  ? src.getDouble() : NaN;
         this.y = (size > 0)  ? src.getDouble() : NaN;
+        this.w = (size > 0)  ?  0 : NaN;
+        this.h = (size > 0)  ?  0 : NaN;
         this.z = (size > 16) ? src.getDouble() : NaN;                       
         this.m = (size > 24) ? src.getDouble() : NaN;
     }
@@ -254,6 +258,9 @@ function ShpPolyline(src, size) {
         while(pc--) {
             points.push(new ShpPoint(src,16));
         }
+        
+        // make MBR for polygon...
+        RTree.Rectangle.make_MBR(points, this);
         
         // convert points, and ringOffsets arrays to an array of rings:
         var removed = 0;

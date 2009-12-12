@@ -1,6 +1,7 @@
 <html>
 <head>
 <title>Natural Earth - Javascript Shapefile and DBF Loader</title>
+<script type="text/javascript" src="lib/rtree.js"></script>
 <script type="text/javascript" src="lib/binaryajax.js"></script>
 <script type="text/javascript" src="src/binarywrapper.js"></script>
 <script type="text/javascript" src="src/shapefile.js"></script>
@@ -11,7 +12,6 @@
 <script type="text/javascript">
 
 window.onload = function() {
-
   var map = new Map('map', [
     // country shapes
     new Layer('naturalearthdata/cultural/110m-admin-0-countries', { fillStyle: '#fadfa8', strokeStyle: '#5c3d1f', lineWidth: '0.5' }),

@@ -5,6 +5,8 @@ function Layer(url, style) {
   this.style = style;
 
   var theLayer = this;
+  var theRTree = new RTree();
+  var theLabelRTree; // For hold labels
   
   this.render = function() {
     // it's a little bit "this"-ish... how to put all these member vars into scope?
@@ -12,10 +14,13 @@ function Layer(url, style) {
       var ctx = this.canvas.getContext('2d');
       ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
       if (this.shpFile.header.shapeType == ShpType.SHAPE_POLYGON || this.shpFile.header.shapeType == ShpType.SHAPE_POLYLINE) {
-        renderPolygons(this.canvas, this.shpFile.records, this.dbfFile.records, this.box, this.style);
+        renderPolygons(this.canvas, theRTree.search(this.box), this.dbfFile.records, this.box, this.style);
       }
       else if (this.shpFile.header.shapeType == ShpType.SHAPE_POINT) {
-        renderPoints(this.canvas, this.shpFile.records, this.dbfFile.records, this.box, this.style);
+        renderPoints(this.canvas, theRTree.search(this.box), this.dbfFile.records, this.box, this.style);
+      }
+      if(theLabelRTree) {
+      	renderLabels(this.canvas, theLabelRTree.search(this.box), this.dbfFile.records, this.box, this.style);
       }
     }
   }
@@ -31,14 +36,27 @@ function Layer(url, style) {
     var binFile = oHTTP.binaryResponse;
     log('got data for ' + theLayer.shpURL + ', parsing shapefile');
     theLayer.shpFile = new ShpFile(binFile);
-    if (theLayer.dbfFile) theLayer.render();
+	
+    // Make new R-Tree for layer
+    for(var i = theLayer.shpFile.records.length-1; i >= 0; i--) {
+    	var record = theLayer.shpFile.records[i];
+    	record.obj_id = i; // Save id so we can lookup related data from Dbf
+    	theRTree.insert(record.shape, record);
+  	}
+    if (theLayer.dbfFile) {
+    	theLayer.regenerateLabels();
+    	theLayer.render();
+    }
   }
 
   var onDbfComplete = function(oHTTP) {
     var binFile = oHTTP.binaryResponse;
     log('got data for ' + theLayer.dbfURL + ', parsing dbf file');
     theLayer.dbfFile = new DbfFile(binFile);
-    if (theLayer.shpFile) theLayer.render();
+    if (theLayer.shpFile) {
+    	theLayer.regenerateLabels();
+    	theLayer.render();
+    }
   }  
 
   this.load = function() {
@@ -47,6 +65,42 @@ function Layer(url, style) {
     this.shpLoader = new BinaryAjax(shpURL, onShpComplete, onShpFail);
     this.dbfLoader = new BinaryAjax(dbfURL, onDbfComplete, onDbfFail);
   }
+  
+  this.regenerateLabels = function() {
+  	if ((this.style.textFill || this.style.textStroke) && this.style.textProp) {
+	  	theLabelRTree = new RTree();
+		  var sc = Math.min(this.canvas.width / this.box.w, this.canvas.height / this.box.h);
+	  	var ctx = this.canvas.getContext('2d');
+	    
+	    if (this.style.font) ctx.font = this.style.font;
+	    if (this.style.textFill) ctx.fillStyle = this.style.textFill;
+	    if (this.style.textStroke) {
+	      ctx.strokeStyle = this.style.textStroke;
+	      ctx.lineJoin = 'round';
+	      ctx.lineCap = 'round';
+	      ctx.lineWidth = this.style.textHalo || 1;
+	    }
+	    ctx.textAlign = 'left';
+	    ctx.textBaseline = 'middle';
+	    var len = theLayer.shpFile.records.length;
+	    for(var i = 0; i < len; i++) {
+	    	var record = theLayer.shpFile.records[i];
+	    	if(theLayer.dbfFile.records[i] && theLayer.dbfFile.records[i].values && theLayer.dbfFile.records[i].values[this.style.textProp]) {
+			    if (record.shapeType == ShpType.SHAPE_POINT) {
+				    var shp = record.shape;
+			      var text = trim(theLayer.dbfFile.records[i].values[this.style.textProp]);
+			      var tx = shp.x;
+			      var ty = shp.y;
+			      var tw = ctx.measureText(text).width / sc;
+			      var th = 12.0 / sc;
+						if(theLabelRTree.search({x:tx,y:ty,w:tw,h:th}).length == 0) theLabelRTree.insert({x:tx,y:ty,w:tw,h:th}, {"text":text, x:tx, y:ty});
+			    }
+			  }
+		  }
+		}	else {
+			theLabelRTree = null;
+		}
+	}
 }
 
 function renderPoints(canvas, records, data, box, style) {
@@ -58,7 +112,7 @@ function renderPoints(canvas, records, data, box, style) {
 
   var ctx = canvas.getContext('2d');
   
-  var sc = Math.min(canvas.width / box.width, canvas.height / box.height);
+  var sc = Math.min(canvas.width / box.w, canvas.height / box.h);
 
   if (style.fillStyle) ctx.fillStyle = style.fillStyle;
   if (style.strokeStyle) ctx.strokeStyle = style.strokeStyle;
@@ -78,22 +132,22 @@ function renderPoints(canvas, records, data, box, style) {
       }
     }
   }
+  t2 = new Date().getTime();
+  log('done rendering in ' + (t2 - t1) + ' ms');
+}
+
+function renderLabels(canvas, records, data, box, style) {
+
+  log('rendering labels');
+
+  var t1 = new Date().getTime();
+  log('starting rendering...');
+
+  var ctx = canvas.getContext('2d');
   
+  var sc = Math.min(canvas.width / box.w, canvas.height / box.h);
+
   if ((style.textFill || style.textStroke) && style.textProp) {
-  
-    if (!style.helper) {
-      style.helper = document.createElement('canvas');
-      style.helper.width = canvas.width;
-      style.helper.height = canvas.height;
-      // TODO: fix for IE?
-    }
-
-    var helper = style.helper.getContext('2d');
-    helper.clearRect(0,0,style.helper.width,style.helper.height);
-    helper.fillStyle = 'black';
-    
-    //var helper = ctx;
-
     if (style.font) ctx.font = style.font;
     if (style.textFill) ctx.fillStyle = style.textFill;
     if (style.textStroke) {
@@ -105,38 +159,9 @@ function renderPoints(canvas, records, data, box, style) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     for (var i = 0; i < records.length; i++) {
-      if (data[i] && data[i].values && data[i].values[style.textProp]) {
-        var record = records[i];
-        if (record.shapeType == ShpType.SHAPE_POINT) {
-          var shp = record.shape;
-          var text = trim(data[i].values[style.textProp]);
-          var tx = Math.round(3 + (shp.x - box.x) * sc);
-          var ty = Math.round(canvas.height - (shp.y - box.y) * sc);
-          var tw = Math.round(ctx.measureText(text).width);
-          var th = 12;
-
-          if (tx < 0 || tx+tw >= canvas.width || ty-th/2 < 0 || ty+th/2 >= canvas.height) continue;
-          
-          var img = helper.getImageData(tx+tw/2,ty,1,1);
-          if (img.data[3]) continue;
-          var img = helper.getImageData(tx,ty-th/2,1,1);
-          if (img.data[3]) continue;
-          img = helper.getImageData(tx+tw,ty-th/2,1,1);
-          if (img.data[3]) continue;
-          img = helper.getImageData(tx+tw,ty+th/2,1,1);
-          if (img.data[3]) continue;
-          img = helper.getImageData(tx,ty+th/2,1,1);
-          if (img.data[3]) continue;
-          
-          helper.fillRect(tx, ty-th/2, tw, th);
-          
-          if (style.textStroke) ctx.strokeText(text, tx, ty);
-          if (style.textFill) ctx.fillText(text, tx, ty);
-        }
-      }
-      else {
-        log(data[i].values);
-      }
+      var text = records[i].text;
+      if (style.textStroke) ctx.strokeText(text, 3+(records[i].x - box.x) * sc, canvas.height - (records[i].y - box.y) * sc);
+      if (style.textFill) ctx.fillText(text, 3+(records[i].x - box.x) * sc, canvas.height - (records[i].y - box.y) * sc);
     }
   }
   
@@ -162,7 +187,7 @@ function renderPolygons(canvas, records, data, box, style) {
 
   var ctx = canvas.getContext('2d');
   
-  var sc = Math.min(canvas.width / box.width, canvas.height / box.height);
+  var sc = Math.min(canvas.width / box.w, canvas.height / box.h);
 
   if (style) {
     for (var p in style) {
