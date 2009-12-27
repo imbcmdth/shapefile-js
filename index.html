@@ -32,16 +32,17 @@ function onShpComplete(oHTTP) {
 
   if (window.console && window.console.log) console.log('got data, parsing shapefile');
 
-  shpFile = new ShpFile(binFile);
-
-  if (shpFile.header.shapeType != ShpType.SHAPE_POLYGON && shpFile.header.shapeType != ShpType.SHAPE_POLYLINE) {
-    alert("Shapefile does not contain Polygon records (found type: "+shpFile.header.shapeType+")");
-  }  
-  
-  //if (window.console && window.console.log) console.log(records);
-  if (dbfFile) {
-    render(shpFile.records, dbfFile.records);
-  }
+  shpFile = new ShpFile(binFile, function(){
+	
+	  if (shpFile.header.shapeType != ShpType.SHAPE_POLYGON && shpFile.header.shapeType != ShpType.SHAPE_POLYLINE) {
+	    alert("Shapefile does not contain Polygon records (found type: "+shpFile.header.shapeType+")");
+	  }  
+	  
+	  //if (window.console && window.console.log) console.log(records);
+	  if (dbfFile) {
+	    render(shpFile.records, dbfFile.records);
+	  }
+  });
 }
 
 function onDbfComplete(oHTTP) {
@@ -165,6 +166,8 @@ canvas {
 <body>
 <h1>Javascript Shapefile and DBF Loader</h1>
 <p>Loading shapefile... uninformative errors may appear in the dark crevices of your browser.</p>
+<p id="progress_container">
+</p>
 <canvas id="map" width="800" height="400"></canvas>
 <p>See <a href="http://github.com/RandomEtc/shapefile-js">http://github.com/RandomEtc/shapefile-js</a> for more details.</p>
 </body>

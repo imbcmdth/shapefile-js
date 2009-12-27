@@ -1,35 +1,47 @@
 // ported from http://code.google.com/p/vanrijkom-flashlibs/ under LGPL v2.1
 
-function ShpFile(binFile) {
+function ShpFile(binFile, doneloadingcallback) {
+    
+    this.bar = document.createElement('div');
+    this.bar.innerHTML = "Loading Layer: ";
+    // TODO get these from parent properties or in constructor:
+    document.getElementById("progress_container").appendChild(this.bar);
+    this.span = document.createElement('span');
+    this.span.innerHTML = "0%";
+    this.bar.appendChild(this.span);
+    
+    var d = new BinaryFileWrapper(binFile);
+		this.doneloading =  doneloadingcallback;
+		
+    this.t1 = new Date().getTime();    
+    this.header = new ShpHeader(d);
 
-    var src = new BinaryFileWrapper(binFile);
-
-    var t1 = new Date().getTime();    
-    this.header = new ShpHeader(src);
-
-    var t2 = new Date().getTime();
-    if (window.console && window.console.log) console.log('parsed header in ' + (t2-t1) + ' ms');    
+    this.t2 = new Date().getTime();
+    if (window.console && window.console.log) console.log('parsed header in ' + (this.t2-this.t1) + ' ms');    
         
     if (window.console && window.console.log) console.log('got header, parsing records');
 
-    t1 = new Date().getTime();
+    this.t1 = new Date().getTime();
     this.records = [];
-    while (true) {                                    
-        try {                     
-                this.records.push(new ShpRecord(src));
-        }
-        catch (e) {
-            if (e.id !== ShpError.ERROR_NODATA) {
-                alert(e);
-            }
-            break;
-        }
-    }
-
-    t2 = new Date().getTime();
-    if (window.console && window.console.log) console.log('parsed records in ' + (t2-t1) + ' ms');    
-
+    loadARecord(this, d);
 }
+
+function loadARecord(shapes, src) {
+  try {
+  				shapes.span.innerHTML = Math.floor((src.position / src.getLength())*100) + "%";
+          shapes.records.push(new ShpRecord(shapes, src));
+  }
+  catch (e) {
+      if (e.id !== ShpError.ERROR_NODATA) {
+          console.log(e);
+      }
+		  shapes.t2 = new Date().getTime();
+		  if (window.console && window.console.log) console.log('parsed records in ' + (shapes.t2-shapes.t1) + ' ms');    
+		  shapes.span.innerHTML = "Finished!";
+      setTimeout(function(){ shapes.bar.parentNode.removeChild(shapes.bar); shapes.doneloading.apply(shapes); }, 1000);
+      return;
+  }
+};
 
 /**
  * The ShpType class is a place holder for the ESRI Shapefile defined
@@ -154,7 +166,7 @@ function ShpHeader(src)
 }
 
 
-function ShpRecord(src) {
+function ShpRecord(shapes, src) {
     var availableBytes = src.getLength() - src.position;
     
     if (availableBytes == 0) 
@@ -174,16 +186,16 @@ function ShpRecord(src) {
                     
     switch(this.shapeType) {
         case ShpType.SHAPE_POINT:
-            this.shape = new ShpPoint(src, this.contentLengthBytes);
+            this.shape = new ShpPoint(shapes, src, this.contentLengthBytes);
             break;
         case ShpType.SHAPE_POINTZ:
-            this.shape = new ShpPointZ(src, this.contentLengthBytes);
+            this.shape = new ShpPointZ(shapes, src, this.contentLengthBytes);
             break;
         case ShpType.SHAPE_POLYGON:
-            this.shape = new ShpPolygon(src, this.contentLengthBytes);
+            this.shape = new ShpPolygon(shapes, src, this.contentLengthBytes);
             break;
         case ShpType.SHAPE_POLYLINE:
-            this.shape = new ShpPolyline(src, this.contentLengthBytes);
+            this.shape = new ShpPolyline(shapes, src, this.contentLengthBytes);
             break;
         case ShpType.SHAPE_MULTIPATCH:
         case ShpType.SHAPE_MULTIPOINT:
@@ -202,7 +214,7 @@ function ShpRecord(src) {
     }
 }
 
-function ShpPoint(src, size) {
+function ShpPoint(shapes, src, size) {
     this.type = ShpType.SHAPE_POINT;
     if (src) {                      
         if (src.getLength() - src.position < size)
@@ -212,8 +224,10 @@ function ShpPoint(src, size) {
         this.w = (size > 0)  ?  0 : NaN;
         this.h = (size > 0)  ?  0 : NaN;
     }
+    if(shapes) setTimeout(makeCallback(shapes, src), 1);
 }
-function ShpPointZ(src, size) {
+
+function ShpPointZ(shapes, src, size) {
     this.type = ShpType.SHAPE_POINTZ;
     if (src) {
         if (src.getLength() - src.position < size)
@@ -225,15 +239,20 @@ function ShpPointZ(src, size) {
         this.z = (size > 16) ? src.getDouble() : NaN;                       
         this.m = (size > 24) ? src.getDouble() : NaN;
     }
+    if(shapes) setTimeout(makeCallback(shapes, src), 1);
 }
-function ShpPolygon(src, size) {
+
+function makeCallback(shapes, src){ return function(){loadARecord(shapes, src);}; };
+
+function ShpPolygon(shapes, src, size) {
     // for want of a super()
-    ShpPolyline.apply(this, [src, size]);
+    ShpPolyline.apply(this, [shapes, src, size]);
     this.type = ShpType.SHAPE_POLYGON;
 }
-function ShpPolyline(src, size) {
+
+function ShpPolyline(shapes, src, size) {
     this.type = ShpType.SHAPE_POLYLINE;
-    this.rings = [];             
+    this.rings = [];   
     if (src) {                      
         if (src.getLength() - src.position < size)
             throw(new ShpError("Not a Polygon record (too small)"));
@@ -254,11 +273,12 @@ function ShpPolyline(src, size) {
             ringOffsets.push(ringOffset);
         }
         
-        var points = [];                 
-        while(pc--) {
-            points.push(new ShpPoint(src,16));
-        }
-        
+	      var points = [];         
+
+	      while(pc) {
+	      	points.push(new ShpPoint(false, src, 16));
+	      	pc--;
+	      }
         // make MBR for polygon...
         RTree.Rectangle.make_MBR(points, this);
         
@@ -271,7 +291,9 @@ function ShpPolyline(src, size) {
             this.rings.push(points.splice(0,split-removed));
             removed = split;
         }       
-        this.rings.push(points);                                     
+        this.rings.push(points);
+        
+  		  if(shapes) setTimeout(makeCallback(shapes, src), 1);
     }
 }
 
